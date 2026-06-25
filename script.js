@@ -1,14 +1,14 @@
-/* ════════════════════════════════════════════════════════════════════════════════
+/* ══════════════════════════════════════════════════════════════════════════
    CHRONIQUES OUBLIÉES · VTT · script.js
-   Version 1.0 — GitHub Pages compatible (static only)
+   Version 2.0 — GitHub Pages compatible (static only)
    Phase 2 FINAL — Tokens, Sauvegarde unifiée, Nettoyage données
-   ════════════════════════════════════════════════════════════════════════════════ */
+   ══════════════════════════════════════════════════════════════════════════ */
 
 'use strict';
 
-// ════════════════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════
 //  ÉTAT GLOBAL
-// ════════════════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════
 const State = {
   // Vue
   zoom: 1,
@@ -69,9 +69,9 @@ const State = {
   playerRole: 'mj', // 'mj' ou 'joueur'
 };
 
-// ════════════════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════
 //  CONSTANTES UTILITAIRES
-// ════════════════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════
 const STORAGE_KEY_MAIN = 'chroniques-vtt-data';
 
 const HEROES = [
@@ -81,9 +81,9 @@ const HEROES = [
   { name: 'Brother Vex', icon: '☩',  class: 'cleric'  },
 ];
 
-// ════════════════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════
 //  UTILITAIRES
-// ════════════════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════
 function $(id) { return document.getElementById(id); }
 function clamp(v, min, max) { return Math.min(Math.max(v, min), max); }
 
@@ -104,9 +104,9 @@ function updateLog(msg) {
   if (el) el.textContent = msg;
 }
 
-// ════════════════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════
 //  SAUVEGARDE UNIFIÉE — TOUS LES SYSTÈMES
-// ════════════════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════
 function saveToStorage() {
   try {
     // Sauvegarder images tokens séparément (trop volumineux)
@@ -275,14 +275,15 @@ function resetCampaignData() {
   renderScenesList();
   renderScenesModal();
   updateCampaignDisplay();
+  updateInfoDisplay();
   saveToStorage();
   showToast('Campagne réinitialisée', 'success', '♻');
   updateLog('Campagne réinitialisée');
 }
 
-// ════════════════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════
 //  PARTICULES — SPLASH SCREEN
-// ════════════════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════
 function initSplashParticles() {
   const canvas = $('splash-particles');
   if (!canvas) return;
@@ -333,9 +334,9 @@ function initSplashParticles() {
   animate();
 }
 
-// ════════════════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════
 //  TRANSITION SPLASH → APP
-// ════════════════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════
 function enterApp() {
   const splash = $('splash-screen');
   const app = $('app');
@@ -349,9 +350,9 @@ function enterApp() {
   }, 850);
 }
 
-// ════════════════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════
 //  INITIALISATION PRINCIPALE
-// ════════════════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════
 function initApp() {
   loadFromStorage();
   applySavedSettings();
@@ -382,6 +383,7 @@ function initApp() {
 
   applyVignette();
   updateCampaignDisplay();
+  updateInfoDisplay();
 
   updateLog('Bienvenue, Maître du Jeu…');
   showToast('Table virtuelle prête', 'success', '⚜');
@@ -418,9 +420,16 @@ function updateCampaignDisplay() {
   if (sessEl) sessEl.textContent = `#${State.sessionNumber}`;
 }
 
-// ════════════════════════════════════════════════════════════════════════════════
+function updateInfoDisplay() {
+  const tokensEl = $('info-tokens');
+  if (tokensEl) tokensEl.textContent = State.tokens.length;
+  const scenesEl = $('info-scenes');
+  if (scenesEl) scenesEl.textContent = State.scenes.length;
+}
+
+// ══════════════════════════════════════════════════════════════════════════
 //  SCÈNES
-// ════════════════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════
 function renderScenesList() {
   const list = $('scenes-list');
   if (!list) return;
@@ -523,9 +532,9 @@ function loadScene(scene) {
   showToast(`${scene.icon} ${scene.name}`, 'info');
 }
 
-// ════════════════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════
 //  MAP VIEWPORT — ZOOM & PAN
-// ════════════════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════
 function setupMapViewport() {
   const viewport = $('map-viewport');
   const container = $('map-container');
@@ -661,9 +670,9 @@ function fitView() {
   updateZoomLabel();
 }
 
-// ════════════════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════
 //  GRILLE
-// ════════════════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════
 function drawGrid() {
   const canvas = $('grid-canvas');
   if (!canvas) return;
@@ -710,9 +719,9 @@ function toggleGrid() {
   showToast(State.gridVisible ? 'Grille activée' : 'Grille masquée', 'info', '⊞');
 }
 
-// ════════════════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════
 //  MINIMAP
-// ════════════════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════
 function setupMinimap() {
   const minimap = $('minimap-canvas');
   if (!minimap) return;
@@ -766,9 +775,9 @@ function updateMinimap() {
   indicator.style.height = Math.min(visH, canvas.height) + 'px';
 }
 
-// ════════════════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════
 //  TOOLBAR GAUCHE
-// ════════════════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════
 function setupToolbar() {
   document.querySelectorAll('[data-tool]').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -809,9 +818,9 @@ function setupToolbar() {
   });
 }
 
-// ════════════════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════
 //  TOPBAR
-// ════════════════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════
 function setupTopbar() {
   $('btn-grid-toggle')?.addEventListener('click', toggleGrid);
 
@@ -828,9 +837,9 @@ function setupTopbar() {
     });
 }
 
-// ════════════════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════
 //  MODALES
-// ════════════════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════
 function openModal(id) {
   const modal = $(id);
   if (modal) modal.classList.remove('hidden');
@@ -854,9 +863,9 @@ function setupModals() {
   });
 }
 
-// ════════════════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════
 //  PARAMÈTRES
-// ════════════════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════
 function setupSettings() {
   $('btn-save-settings')?.addEventListener('click', () => {
     const campName = $('setting-campaign-name')?.value.trim();
@@ -933,9 +942,9 @@ function applyVignette() {
   }
 }
 
-// ════════════════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════
 //  IMPORT DE CARTES
-// ════════════════════════════════════════════════════════════════════════════════
+// ══════════════════════════════════════════════════════════════════════════
 function setupFileImports() {
   $('btn-import-map')?.addEventListener('click', () => $('file-map-import')?.click());
 
@@ -1003,15 +1012,16 @@ function handleMapFile(file) {
     renderScenesList();
     renderScenesModal();
     saveToStorage();
+    updateInfoDisplay();
     showToast(`Carte importée : ${sceneName}`, 'success', '📜');
     updateLog(`Carte importée : ${sceneName}`);
   };
   reader.readAsDataURL(file);
 }
 
-// ════════════════════════════════════════════════════════════════════════════════
+// ═════════════════════════════════════════════════════════════════════════
 //  DÉS
-// ════════════════════════════════════════════════════════════════════════════════
+// ═════════════════════════════════════════════════════════════════════════
 function setupDice() {
   document.querySelectorAll('.dice-btn').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -1047,9 +1057,9 @@ function rollDie(sides) {
   showToast(msg, type, icon);
 }
 
-// ════════════════════════════════════════════════════════════════════════════════
+// ═════════════════════════════════════════════════════════════════════════
 //  INITIATIVE
-// ════════════════════════════════════════════════════════════════════════════════
+// ═════════════════════════════════════════════════════════════════════════
 function setupInitiative() {
   $('btn-roll-initiative')?.addEventListener('click', rollInitiative);
   $('btn-end-turn')?.addEventListener('click', nextTurn);
@@ -1148,9 +1158,9 @@ function renderInitiativeTrack() {
   });
 }
 
-// ════════════════════════════════════════════════════════════════════════════════
+// ═════════════════════════════════════════════════════════════════════════
 //  RACCOURCIS CLAVIER
-// ════════════════════════════════════════════════════════════════════════════════
+// ═════════════════════════════════════════════════════════════════════════
 function setupKeyboard() {
   document.addEventListener('keydown', (e) => {
     if (['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
@@ -1188,9 +1198,9 @@ window.addEventListener('resize', () => {
   updateMinimap();
 });
 
-// ════════════════════════════════════════════════════════════════════════════════
+// ═════════════════════════════════════════════════════════════════════════
 //  PHASE 2 — TOKENS
-// ════════════════════════════════════════════════════════════════════════════════
+// ═════════════════════════════════════════════════════════════════════════
 let _pendingImgData = null;
 
 function initPhase2() {
@@ -1284,6 +1294,18 @@ function initPhase2() {
     openModal('modal-fog');
   });
 
+  // Search tokens
+  const searchInput = $('token-search-input');
+  if (searchInput) {
+    searchInput.addEventListener('input', (e) => {
+      const query = e.target.value.toLowerCase();
+      document.querySelectorAll('.token-list-row').forEach(row => {
+        const name = row.querySelector('.token-list-name')?.textContent.toLowerCase() || '';
+        row.style.display = name.includes(query) ? 'flex' : 'none';
+      });
+    });
+  }
+
   setupFogPainting();
   setupTokenDrag();
 
@@ -1295,9 +1317,9 @@ function initPhase2() {
     }
   });
 
-  // Click viewport background → deselect
+  // Click viewport background → deselect (NOT on token)
   $('map-viewport')?.addEventListener('mousedown', (e) => {
-    if (!e.target.closest('.vtt-token') && !State.fogPainting) {
+    if (!e.target.closest('.vtt-token') && !State.fogPainting && e.button === 0) {
       selectToken(null);
     }
   });
@@ -1387,6 +1409,7 @@ function saveTokenFromModal() {
     State.tokens.push(token);
     renderToken(token);
     selectToken(token.id);
+    updateInfoDisplay();
     showToast(`♟ ${name} placé sur la carte`, 'success', '♟');
     updateLog(`Pion créé : ${name}`);
   }
@@ -1498,6 +1521,7 @@ function deleteToken(id) {
   State.tokens = State.tokens.filter(t => t.id !== id);
   try { localStorage.removeItem('co-tok-img-' + id); } catch (_) {}
   if (State.selectedTokenId === id) selectToken(null);
+  updateInfoDisplay();
   saveToStorage();
   showToast('Pion supprimé', 'info', '✕');
 }
@@ -1611,9 +1635,9 @@ function renderTokensListPanel() {
   });
 }
 
-// ═══════════════════════════════════════════════��════════════════════════════════
+// ═════════════════════════════════════════════════════════════════════════
 //  PHASE 2 — BROUILLARD DE GUERRE
-// ════════════════════════════════════════════════════════════════════════════════
+// ═════════════════════════════════════════════════════════════════════════
 function ensureFogCanvas() {
   const layer = $('fog-layer');
   if (!layer) return;
@@ -1784,9 +1808,9 @@ function setupFogPainting() {
   });
 }
 
-// ════════════════════════════════════════════════════════════════════════════════
+// ═════════════════════════════════════════════════════════════════════════
 //  STYLES DYNAMIQUES
-// ════════════════════════════════════════════════════════════════════════════════
+// ═════════════════════════════════════════════════════════════════════════
 (function injectDynamicStyles() {
   const style = document.createElement('style');
   style.textContent = `
@@ -2066,9 +2090,9 @@ function setupFogPainting() {
   document.head.appendChild(style);
 })();
 
-// ════════════════════════════════════════════════════════════════════════════════
+// ═════════════════════════════════════════════════════════════════════════
 //  BOOT
-// ════════════════════════════════════════════════════════════════════════════════
+// ═════════════════════════════════════════════════════════════════════════
 document.addEventListener('DOMContentLoaded', () => {
   initSplashParticles();
   $('btn-enter')?.addEventListener('click', enterApp);
