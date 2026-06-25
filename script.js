@@ -1,13 +1,14 @@
-/* ═══════════════════════════════════════════════════════════════════
+/* ════════════════════════════════════════════════════════════════════════════════
    CHRONIQUES OUBLIÉES · VTT · script.js
    Version 1.0 — GitHub Pages compatible (static only)
-   ═══════════════════════════════════════════════════════════════════ */
+   Phase 2 FINAL — Tokens, Sauvegarde unifiée, Nettoyage données
+   ════════════════════════════════════════════════════════════════════════════════ */
 
 'use strict';
 
-// ══════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════════
 //  ÉTAT GLOBAL
-// ══════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════════
 const State = {
   // Vue
   zoom: 1,
@@ -30,6 +31,22 @@ const State = {
   currentSceneId: null,
   scenes: [],
 
+  // Tokens Phase 2
+  tokens: [],
+  selectedTokenId: null,
+  tokenDragging: false,
+  tokenDragId: null,
+  tokenDragOffX: 0,
+  tokenDragOffY: 0,
+  snapToGrid: true,
+
+  // Brouillard Phase 2
+  fogEnabled: false,
+  fogOpacity: 0.85,
+  fogPainting: false,
+  fogTool: 'reveal',
+  fogBrushSize: 2,
+
   // Combat / Initiative
   combatActive: false,
   currentTurn: 0,
@@ -37,7 +54,7 @@ const State = {
   initiativeOrder: [],
 
   // Paramètres
-  campaignName: 'La Malédiction de Strahd',
+  campaignName: 'Ma Campagne',
   sessionNumber: 1,
   particlesEnabled: true,
   vignetteEnabled: true,
@@ -45,55 +62,18 @@ const State = {
   // Particules splash
   particles: [],
   animFrame: null,
+
+  // Phase 3 prep
+  playerId: null,
+  campaignId: null,
+  playerRole: 'mj', // 'mj' ou 'joueur'
 };
 
-// ══════════════════════════════════════════════════════════════════
-//  SCÈNES PAR DÉFAUT
-// ══════════════════════════════════════════════════════════════════
-const DEFAULT_SCENES = [
-  {
-    id: 'scene-foret',
-    name: 'Forêt Maudite',
-    description: 'Les arbres gémissent dans la nuit…',
-    icon: '🌲',
-    mapUrl: null,
-    mapColor: 'linear-gradient(135deg, #0a1f0a, #1a3a1a)',
-  },
-  {
-    id: 'scene-taverne',
-    name: 'Taverne du Corbeau',
-    description: 'Chaleur, bière et murmures suspects.',
-    icon: '🍺',
-    mapUrl: null,
-    mapColor: 'linear-gradient(135deg, #2a1a0a, #3d2510)',
-  },
-  {
-    id: 'scene-donjon',
-    name: 'Donjon de Pierre',
-    description: 'Le silence n\'est jamais innocent ici.',
-    icon: '🏰',
-    mapUrl: null,
-    mapColor: 'linear-gradient(135deg, #111122, #1a1a2e)',
-  },
-  {
-    id: 'scene-marais',
-    name: 'Marais du Destin',
-    description: 'La brume cache des horreurs anciennes.',
-    icon: '🌫',
-    mapUrl: null,
-    mapColor: 'linear-gradient(135deg, #0a1a10, #1a2d1a)',
-  },
-  {
-    id: 'scene-chateau',
-    name: 'Château de Ravenloft',
-    description: 'Le domaine du Comte s\'étend à l\'infini.',
-    icon: '🦇',
-    mapUrl: null,
-    mapColor: 'linear-gradient(135deg, #1a0a1a, #2d0d2d)',
-  },
-];
+// ════════════════════════════════════════════════════════════════════════════════
+//  CONSTANTES UTILITAIRES
+// ════════════════════════════════════════════════════════════════════════════════
+const STORAGE_KEY_MAIN = 'chroniques-vtt-data';
 
-// Héros pour l'initiative
 const HEROES = [
   { name: 'Thorin',      icon: '⚔',  class: 'warrior' },
   { name: 'Elara',       icon: '✦',  class: 'mage'    },
@@ -101,9 +81,9 @@ const HEROES = [
   { name: 'Brother Vex', icon: '☩',  class: 'cleric'  },
 ];
 
-// ══════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════════
 //  UTILITAIRES
-// ══════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════════
 function $(id) { return document.getElementById(id); }
 function clamp(v, min, max) { return Math.min(Math.max(v, min), max); }
 
@@ -124,9 +104,41 @@ function updateLog(msg) {
   if (el) el.textContent = msg;
 }
 
+// ════════════════════════════════════════════════════════════════════════════════
+//  SAUVEGARDE UNIFIÉE — TOUS LES SYSTÈMES
+// ════════════════════════════════════════════════════════════════════════════════
 function saveToStorage() {
   try {
+    // Sauvegarder images tokens séparément (trop volumineux)
+    State.tokens.forEach(t => {
+      if (t.imgData) {
+        try {
+          localStorage.setItem('co-tok-img-' + t.id, t.imgData);
+        } catch (_) {}
+      }
+    });
+
+    // Sauvegarder images cartes séparément
+    State.scenes.forEach(s => {
+      if (s.mapUrl && s.mapUrl.startsWith('data:')) {
+        try {
+          localStorage.setItem('co-map-img-' + s.id, s.mapUrl);
+        } catch (_) {}
+      }
+    });
+
+    // Sauvegarder brouillard par scène
+    const canvas = $('fog-canvas');
+    if (canvas && canvas.width) {
+      try {
+        const key = 'co-fog-map-' + (State.currentSceneId || 'default');
+        localStorage.setItem(key, canvas.toDataURL('image/png'));
+      } catch (_) {}
+    }
+
+    // Données principales (sans images)
     const data = {
+      // Paramètres campagne
       campaignName: State.campaignName,
       sessionNumber: State.sessionNumber,
       gridVisible: State.gridVisible,
@@ -136,6 +148,8 @@ function saveToStorage() {
       particlesEnabled: State.particlesEnabled,
       vignetteEnabled: State.vignetteEnabled,
       currentSceneId: State.currentSceneId,
+
+      // Scènes (sans données image)
       scenes: State.scenes.map(s => ({
         id: s.id,
         name: s.name,
@@ -143,22 +157,50 @@ function saveToStorage() {
         icon: s.icon,
         mapUrl: s.mapUrl && s.mapUrl.startsWith('data:') ? null : s.mapUrl,
         mapColor: s.mapColor,
-        mapDataKey: s.mapDataKey || null,
+        hasMapImg: !!(s.mapUrl && s.mapUrl.startsWith('data:')),
       })),
+
+      // Tokens (sans images)
+      tokens: State.tokens.map(t => ({
+        id: t.id,
+        name: t.name,
+        type: t.type,
+        hp: t.hp,
+        hpMax: t.hpMax,
+        size: t.size,
+        color: t.color,
+        icon: t.icon,
+        x: t.x,
+        y: t.y,
+        hasImg: !!t.imgData,
+      })),
+
+      // Brouillard
+      fogEnabled: State.fogEnabled,
+      fogOpacity: State.fogOpacity,
+      fogBrushSize: State.fogBrushSize,
+
+      // Phase 3 prep
+      playerId: State.playerId,
+      campaignId: State.campaignId,
+      playerRole: State.playerRole,
     };
-    localStorage.setItem('chroniques-vtt-v1', JSON.stringify(data));
+
+    localStorage.setItem(STORAGE_KEY_MAIN, JSON.stringify(data));
   } catch (e) {
-    console.warn('LocalStorage save error:', e);
+    console.warn('saveToStorage error:', e);
   }
 }
 
 function loadFromStorage() {
   try {
-    const raw = localStorage.getItem('chroniques-vtt-v1');
+    const raw = localStorage.getItem(STORAGE_KEY_MAIN);
     if (!raw) return false;
     const data = JSON.parse(raw);
+
+    // Restaurer paramètres
     Object.assign(State, {
-      campaignName: data.campaignName || State.campaignName,
+      campaignName: data.campaignName || 'Ma Campagne',
       sessionNumber: data.sessionNumber || 1,
       gridVisible: data.gridVisible || false,
       gridCellSize: data.gridCellSize || 60,
@@ -167,30 +209,80 @@ function loadFromStorage() {
       particlesEnabled: data.particlesEnabled !== undefined ? data.particlesEnabled : true,
       vignetteEnabled: data.vignetteEnabled !== undefined ? data.vignetteEnabled : true,
       currentSceneId: data.currentSceneId || null,
+      fogEnabled: data.fogEnabled || false,
+      fogOpacity: data.fogOpacity || 0.85,
+      fogBrushSize: data.fogBrushSize || 2,
+      playerId: data.playerId || null,
+      campaignId: data.campaignId || null,
+      playerRole: data.playerRole || 'mj',
     });
-    // Restaurer les scènes sauvegardées
+
+    // Restaurer scènes avec images
     if (data.scenes && data.scenes.length > 0) {
       State.scenes = data.scenes.map(s => {
-        const def = DEFAULT_SCENES.find(d => d.id === s.id);
-        const scene = { ...(def || {}), ...s };
-        // Tenter de récupérer l'image base64 depuis localStorage si elle avait une clé
-        if (s.mapDataKey) {
-          const imgData = localStorage.getItem(s.mapDataKey);
+        const scene = { ...s };
+        if (s.hasMapImg) {
+          const imgData = localStorage.getItem('co-map-img-' + s.id);
           if (imgData) scene.mapUrl = imgData;
         }
         return scene;
       });
     }
+
+    // Restaurer tokens avec images
+    if (data.tokens && data.tokens.length > 0) {
+      State.tokens = data.tokens.map(t => {
+        const token = { ...t };
+        if (t.hasImg) {
+          const imgData = localStorage.getItem('co-tok-img-' + t.id);
+          if (imgData) token.imgData = imgData;
+        }
+        return token;
+      });
+    }
+
     return true;
   } catch (e) {
-    console.warn('LocalStorage load error:', e);
+    console.warn('loadFromStorage error:', e);
     return false;
   }
 }
 
-// ══════════════════════════════════════════════════════════════════
+function resetCampaignData() {
+  // Supprimer TOUS les localStorage
+  Object.keys(localStorage).forEach(key => {
+    if (key.startsWith('chroniques-') || key.startsWith('co-')) {
+      localStorage.removeItem(key);
+    }
+  });
+
+  // Réinitialiser état
+  State.scenes = [];
+  State.tokens = [];
+  State.selectedTokenId = null;
+  State.currentSceneId = null;
+  State.campaignName = 'Ma Campagne';
+  State.sessionNumber = 1;
+  State.fogEnabled = false;
+
+  // Nettoyer DOM
+  document.querySelectorAll('.vtt-token').forEach(e => e.remove());
+  const tokensList = $('tokens-list-panel');
+  if (tokensList) tokensList.innerHTML = '<span style="color:var(--text-muted);font-style:italic;font-size:0.8rem;">Aucun pion sur la carte.</span>';
+  const scenesList = $('scenes-list');
+  if (scenesList) scenesList.innerHTML = '';
+
+  renderScenesList();
+  renderScenesModal();
+  updateCampaignDisplay();
+  saveToStorage();
+  showToast('Campagne réinitialisée', 'success', '♻');
+  updateLog('Campagne réinitialisée');
+}
+
+// ════════════════════════════════════════════════════════════════════════════════
 //  PARTICULES — SPLASH SCREEN
-// ══════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════════
 function initSplashParticles() {
   const canvas = $('splash-particles');
   if (!canvas) return;
@@ -241,9 +333,9 @@ function initSplashParticles() {
   animate();
 }
 
-// ══════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════════
 //  TRANSITION SPLASH → APP
-// ══════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════════
 function enterApp() {
   const splash = $('splash-screen');
   const app = $('app');
@@ -257,17 +349,12 @@ function enterApp() {
   }, 850);
 }
 
-// ══════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════════
 //  INITIALISATION PRINCIPALE
-// ══════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════════
 function initApp() {
   loadFromStorage();
   applySavedSettings();
-
-  // Scènes par défaut si aucune sauvegarde
-  if (!State.scenes.length) {
-    State.scenes = [];
-  }
 
   renderScenesList();
   renderScenesModal();
@@ -282,19 +369,19 @@ function initApp() {
   setupKeyboard();
   setupMinimap();
 
-  // Charger la scène courante
-  if (State.currentSceneId) {
+  // Phase 2 — Tokens & Brouillard
+  initPhase2();
+
+  // Charger la première scène si elle existe
+  if (State.scenes.length && State.currentSceneId) {
     const scene = State.scenes.find(s => s.id === State.currentSceneId);
     if (scene) loadScene(scene);
-  } else {
+  } else if (State.scenes.length) {
     loadScene(State.scenes[0]);
   }
 
   applyVignette();
   updateCampaignDisplay();
-
-  // Phase 2
-  initPhase2();
 
   updateLog('Bienvenue, Maître du Jeu…');
   showToast('Table virtuelle prête', 'success', '⚜');
@@ -331,13 +418,17 @@ function updateCampaignDisplay() {
   if (sessEl) sessEl.textContent = `#${State.sessionNumber}`;
 }
 
-// ══════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════════
 //  SCÈNES
-// ══════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════════
 function renderScenesList() {
   const list = $('scenes-list');
   if (!list) return;
   list.innerHTML = '';
+  if (State.scenes.length === 0) {
+    list.innerHTML = '<span style="color:var(--text-muted);font-style:italic;font-size:0.8rem;">Aucune scène. Importez une carte.</span>';
+    return;
+  }
   State.scenes.forEach(scene => {
     const item = document.createElement('div');
     item.className = 'scene-item' + (scene.id === State.currentSceneId ? ' active' : '');
@@ -402,6 +493,12 @@ function loadScene(scene) {
       fitView();
       drawGrid();
       updateMinimap();
+      ensureFogCanvas();
+      setTimeout(() => {
+        resizeFogCanvas();
+        applyFogOpacity();
+        restoreFogCanvas();
+      }, 50);
     };
     mapImg.onerror = () => {
       loading.classList.add('hidden');
@@ -410,13 +507,11 @@ function loadScene(scene) {
     };
     mapImg.src = scene.mapUrl;
   } else {
-    // Scène sans image — fond coloré
     mapImg.src = '';
     mapImg.style.display = 'none';
     placeholder.classList.remove('hidden');
     loading.classList.add('hidden');
 
-    // Appliquer la couleur de fond au container
     const container = $('map-container');
     if (container) container.style.background = scene.mapColor || 'var(--deep)';
   }
@@ -428,9 +523,9 @@ function loadScene(scene) {
   showToast(`${scene.icon} ${scene.name}`, 'info');
 }
 
-// ══════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════════
 //  MAP VIEWPORT — ZOOM & PAN
-// ══════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════════
 function setupMapViewport() {
   const viewport = $('map-viewport');
   const container = $('map-container');
@@ -469,7 +564,6 @@ function setupMapViewport() {
 
   window.addEventListener('mousemove', (e) => {
     if (!State.isPanning) {
-      // Mise à jour coordonnées
       const viewport = $('map-viewport');
       if (viewport) {
         const rect = viewport.getBoundingClientRect();
@@ -567,9 +661,9 @@ function fitView() {
   updateZoomLabel();
 }
 
-// ══════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════════
 //  GRILLE
-// ══════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════════
 function drawGrid() {
   const canvas = $('grid-canvas');
   if (!canvas) return;
@@ -608,7 +702,6 @@ function toggleGrid() {
   const btn = $('btn-grid-toggle');
   if (btn) btn.classList.toggle('active', State.gridVisible);
 
-  // Sync settings checkbox
   const settGrid = $('setting-grid');
   if (settGrid) settGrid.checked = State.gridVisible;
 
@@ -617,11 +710,10 @@ function toggleGrid() {
   showToast(State.gridVisible ? 'Grille activée' : 'Grille masquée', 'info', '⊞');
 }
 
-// ══════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════════
 //  MINIMAP
-// ══════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════════
 function setupMinimap() {
-  // Clic sur la minimap pour naviguer
   const minimap = $('minimap-canvas');
   if (!minimap) return;
   minimap.addEventListener('click', (e) => {
@@ -656,10 +748,8 @@ function updateMinimap() {
     return;
   }
 
-  // Dessiner la miniature
   ctx.drawImage(mapImg, 0, 0, canvas.width, canvas.height);
 
-  // Indicateur de vue
   if (!indicator || !viewport) return;
   const scaleX = canvas.width / mapImg.naturalWidth;
   const scaleY = canvas.height / mapImg.naturalHeight;
@@ -676,11 +766,10 @@ function updateMinimap() {
   indicator.style.height = Math.min(visH, canvas.height) + 'px';
 }
 
-// ══════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════════
 //  TOOLBAR GAUCHE
-// ══════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════════
 function setupToolbar() {
-  // Boutons outils
   document.querySelectorAll('[data-tool]').forEach(btn => {
     btn.addEventListener('click', () => {
       State.activeTool = btn.dataset.tool;
@@ -695,7 +784,6 @@ function setupToolbar() {
     });
   });
 
-  // Zoom buttons
   $('btn-zoom-in')?.addEventListener('click', () => {
     State.zoom = clamp(State.zoom * 1.2, State.minZoom, State.maxZoom);
     applyTransform();
@@ -716,16 +804,14 @@ function setupToolbar() {
     showToast('Vue ajustée', 'info', '⊞');
   });
 
-  // Fog toggle — Phase 2 le prend en charge dans initPhase2()
-  // (stub cosmétique Phase 1 supprimé)
   $('btn-ambient')?.addEventListener('click', () => {
     showToast("Sons d'ambiance (Phase 3)", 'warning', '🎵');
   });
 }
 
-// ══════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════════
 //  TOPBAR
-// ══════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════════
 function setupTopbar() {
   $('btn-grid-toggle')?.addEventListener('click', toggleGrid);
 
@@ -733,10 +819,8 @@ function setupTopbar() {
 
   $('btn-settings')?.addEventListener('click', () => openModal('modal-settings'));
 
-  // Clic sur le nom de campagne → paramètres
   $('campaign-name')?.addEventListener('click', () => openModal('modal-settings'));
 
-  // Bouton + dans le panneau scènes
   document.querySelector('#scenes-list')?.closest('.panel-section')
     ?.querySelector('.btn-add')
     ?.addEventListener('click', () => {
@@ -744,9 +828,9 @@ function setupTopbar() {
     });
 }
 
-// ══════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════════
 //  MODALES
-// ══════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════════
 function openModal(id) {
   const modal = $(id);
   if (modal) modal.classList.remove('hidden');
@@ -757,25 +841,22 @@ function closeAllModals() {
 }
 
 function setupModals() {
-  // Fermer via bouton ✕
   document.querySelectorAll('.modal-close').forEach(btn => {
     btn.addEventListener('click', closeAllModals);
   });
 
-  // Fermer en cliquant l'overlay
   document.querySelectorAll('.modal-overlay').forEach(overlay => {
     overlay.addEventListener('click', closeAllModals);
   });
 
-  // Echap
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape') closeAllModals();
   });
 }
 
-// ══════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════════
 //  PARAMÈTRES
-// ══════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════════
 function setupSettings() {
   $('btn-save-settings')?.addEventListener('click', () => {
     const campName = $('setting-campaign-name')?.value.trim();
@@ -803,7 +884,6 @@ function setupSettings() {
     updateLog('Paramètres mis à jour');
   });
 
-  // Live preview grille
   $('setting-grid-opacity')?.addEventListener('input', (e) => {
     State.gridOpacity = parseFloat(e.target.value);
     if (State.gridVisible) drawGrid();
@@ -822,6 +902,25 @@ function setupSettings() {
     if (gridBtn) gridBtn.classList.toggle('active', State.gridVisible);
     drawGrid();
   });
+
+  // Bouton réinitialiser campagne
+  const btnReset = document.querySelector('#modal-settings .settings-group');
+  if (btnReset && !$('btn-reset-campaign')) {
+    const resetBtn = document.createElement('button');
+    resetBtn.id = 'btn-reset-campaign';
+    resetBtn.className = 'btn-fantasy';
+    resetBtn.style.marginTop = '12px';
+    resetBtn.style.background = 'rgba(192,57,43,0.15)';
+    resetBtn.style.borderColor = 'var(--blood)';
+    resetBtn.textContent = '♻ Réinitialiser la campagne';
+    resetBtn.addEventListener('click', () => {
+      if (confirm('Êtes-vous sûr ? Cette action supprimera TOUTES les données sauvegardées.')) {
+        resetCampaignData();
+        closeAllModals();
+      }
+    });
+    btnReset.parentElement.appendChild(resetBtn);
+  }
 }
 
 function applyVignette() {
@@ -834,19 +933,16 @@ function applyVignette() {
   }
 }
 
-// ══════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════════
 //  IMPORT DE CARTES
-// ══════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════════
 function setupFileImports() {
-  // Bouton placeholder
   $('btn-import-map')?.addEventListener('click', () => $('file-map-import')?.click());
 
-  // Import depuis placeholder
   $('file-map-import')?.addEventListener('change', (e) => {
     handleMapFile(e.target.files[0]);
   });
 
-  // Import depuis modale scènes
   $('btn-modal-import')?.addEventListener('click', () => $('file-modal-import')?.click());
 
   $('file-modal-import')?.addEventListener('change', (e) => {
@@ -854,7 +950,6 @@ function setupFileImports() {
     closeAllModals();
   });
 
-  // Drag & drop sur le viewport
   const viewport = $('map-viewport');
   if (viewport) {
     viewport.addEventListener('dragover', (e) => {
@@ -872,7 +967,6 @@ function setupFileImports() {
     });
   }
 
-  // Bouton + dans le panneau droit
   const panelAddBtn = document.querySelector('#panel-right .btn-add');
   if (panelAddBtn) {
     panelAddBtn.addEventListener('click', () => $('file-map-import')?.click());
@@ -894,17 +988,7 @@ function handleMapFile(file) {
     const dataUrl = e.target.result;
     const sceneName = file.name.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ');
 
-    // Créer une nouvelle scène
     const newId = 'scene-custom-' + Date.now();
-    const dataKey = 'map-data-' + newId;
-
-    // Tenter de sauvegarder l'image (peut échouer si quota dépassé)
-    try {
-      localStorage.setItem(dataKey, dataUrl);
-    } catch (err) {
-      console.warn('Storage quota exceeded for image — image will not persist across sessions');
-    }
-
     const newScene = {
       id: newId,
       name: sceneName,
@@ -912,7 +996,6 @@ function handleMapFile(file) {
       icon: '🗺',
       mapUrl: dataUrl,
       mapColor: 'linear-gradient(135deg, #0a0a1a, #1a1a2e)',
-      mapDataKey: dataKey,
     };
 
     State.scenes.push(newScene);
@@ -926,9 +1009,9 @@ function handleMapFile(file) {
   reader.readAsDataURL(file);
 }
 
-// ══════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════════
 //  DÉS
-// ══════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════════
 function setupDice() {
   document.querySelectorAll('.dice-btn').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -948,7 +1031,6 @@ function rollDie(sides) {
   if (valueEl)  valueEl.textContent = result;
   if (typeEl)   typeEl.textContent  = `d${sides}`;
 
-  // Animation pulse
   if (valueEl) {
     valueEl.style.transform = 'scale(1.4)';
     valueEl.style.color = result === sides ? 'var(--gold-light)' : result === 1 ? 'var(--blood)' : 'var(--text-primary)';
@@ -965,9 +1047,9 @@ function rollDie(sides) {
   showToast(msg, type, icon);
 }
 
-// ══════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════════
 //  INITIATIVE
-// ══════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════════
 function setupInitiative() {
   $('btn-roll-initiative')?.addEventListener('click', rollInitiative);
   $('btn-end-turn')?.addEventListener('click', nextTurn);
@@ -976,7 +1058,6 @@ function setupInitiative() {
 
 function rollInitiative() {
   if (State.combatActive) {
-    // Reset
     State.combatActive = false;
     State.round = 0;
     State.currentTurn = 0;
@@ -989,7 +1070,6 @@ function rollInitiative() {
     return;
   }
 
-  // Lancer l'initiative pour chaque héros + un ennemi aléatoire
   const combatants = [
     ...HEROES.map(h => ({
       name: h.name,
@@ -1005,7 +1085,6 @@ function rollInitiative() {
     },
   ];
 
-  // Trier par initiative décroissante
   combatants.sort((a, b) => b.initiative - a.initiative);
 
   State.initiativeOrder = combatants;
@@ -1069,12 +1148,11 @@ function renderInitiativeTrack() {
   });
 }
 
-// ══════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════════
 //  RACCOURCIS CLAVIER
-// ══════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════════
 function setupKeyboard() {
   document.addEventListener('keydown', (e) => {
-    // Ignorer si un input est actif
     if (['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
 
     switch (e.key.toLowerCase()) {
@@ -1091,6 +1169,7 @@ function setupKeyboard() {
         applyTransform(); updateZoomLabel(); updateMinimap();
         break;
       case 'escape': closeAllModals(); break;
+      case 't': openTokenCreateModal(); break;
     }
   });
 }
@@ -1104,218 +1183,18 @@ function activateTool(tool) {
   if (viewport) viewport.style.cursor = tool === 'pan' ? 'grab' : 'default';
 }
 
-// ══════════════════════════════════════════════════════════════════
-//  RESIZE
-// ══════════════════════════════════════════════════════════════════
 window.addEventListener('resize', () => {
   drawGrid();
   updateMinimap();
 });
 
-// ══════════════════════════════════════════════════════════════════
-//  STYLES DYNAMIQUES POUR INITIATIVE (injection CSS)
-// ══════════════════════════════════════════════════════════════════
-(function injectDynamicStyles() {
-  const style = document.createElement('style');
-  style.textContent = `
-    /* Initiative Track */
-    .init-track {
-      display: flex;
-      align-items: center;
-      gap: 6px;
-      flex-wrap: nowrap;
-      overflow-x: auto;
-      padding: 2px 0;
-      scrollbar-width: none;
-    }
-    .init-track::-webkit-scrollbar { display: none; }
-    .init-empty {
-      font-family: 'Crimson Text', serif;
-      font-style: italic;
-      color: var(--text-muted);
-      font-size: 0.82rem;
-    }
-    .init-slot {
-      display: flex;
-      align-items: center;
-      gap: 5px;
-      padding: 3px 10px 3px 6px;
-      background: rgba(255,255,255,0.04);
-      border: 1px solid rgba(255,255,255,0.08);
-      border-radius: 20px;
-      font-family: 'Cinzel', serif;
-      font-size: 0.7rem;
-      color: var(--text-secondary);
-      cursor: pointer;
-      transition: var(--transition);
-      white-space: nowrap;
-      user-select: none;
-    }
-    .init-slot:hover {
-      border-color: rgba(201,168,76,0.3);
-      color: var(--text-primary);
-    }
-    .init-slot.active {
-      background: rgba(201,168,76,0.12);
-      border-color: var(--gold);
-      color: var(--gold-light);
-      box-shadow: 0 0 12px rgba(201,168,76,0.2);
-    }
-    .init-slot.enemy.active {
-      background: rgba(192,57,43,0.12);
-      border-color: var(--blood);
-      color: #e74c3c;
-      box-shadow: 0 0 12px rgba(192,57,43,0.2);
-    }
-    .init-icon { font-size: 0.85rem; }
-    .init-name { font-weight: 600; }
-    .init-score {
-      font-family: 'JetBrains Mono', monospace;
-      font-size: 0.65rem;
-      color: var(--text-muted);
-    }
-    .init-slot.active .init-score { color: var(--gold-dim); }
-
-    /* Scene list items */
-    .scene-item {
-      display: flex;
-      align-items: center;
-      gap: 10px;
-      padding: 8px 10px;
-      border-radius: 8px;
-      cursor: pointer;
-      transition: var(--transition);
-      border: 1px solid transparent;
-    }
-    .scene-item:hover {
-      background: rgba(201,168,76,0.06);
-      border-color: rgba(201,168,76,0.12);
-    }
-    .scene-item.active {
-      background: rgba(201,168,76,0.1);
-      border-color: rgba(201,168,76,0.25);
-    }
-    .scene-item-icon { font-size: 1.2rem; flex-shrink: 0; }
-    .scene-item-info { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
-    .scene-item-name {
-      font-family: 'Cinzel', serif;
-      font-size: 0.8rem;
-      font-weight: 600;
-      color: var(--text-primary);
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-    .scene-item-desc {
-      font-size: 0.72rem;
-      color: var(--text-muted);
-      font-style: italic;
-      white-space: nowrap;
-      overflow: hidden;
-      text-overflow: ellipsis;
-    }
-
-    /* Dice result animation */
-    .dice-result .result-value {
-      transition: transform 0.2s ease, color 0.2s ease;
-    }
-
-    /* Minimap indicator */
-    #minimap-viewport-indicator {
-      position: absolute;
-      border: 1px solid rgba(201,168,76,0.7);
-      background: rgba(201,168,76,0.08);
-      pointer-events: none;
-      display: none;
-    }
-  `;
-  document.head.appendChild(style);
-})();
-
-
-// Nettoyage campagne - efface uniquement les données de jeu créées
-function resetCampaignData() {
-  [
-    'chroniques-vtt-v1',
-    'co-tokens-v2',
-    'co-fog-v2'
-  ].forEach(k => localStorage.removeItem(k));
-  Object.assign(State, { scenes: [], tokens: [], currentSceneId: null, selectedTokenId: null });
-  document.querySelectorAll('.vtt-token').forEach(e => e.remove());
-  renderScenes?.();
-  saveState?.();
-  savePhase2?.();
-  showToast?.('Campagne réinitialisée', 'info', '♻');
-}
-
-// ══════════════════════════════════════════════════════════════════
-//  PHASE 2 — ÉTAT TOKENS & BROUILLARD
-// ══════════════════════════════════════════════════════════════════
-Object.assign(State, {
-  tokens: [],
-  selectedTokenId: null,
-  tokenDragging: false,
-  tokenDragId: null,
-  tokenDragOffX: 0,
-  tokenDragOffY: 0,
-  snapToGrid: true,
-  fogEnabled: false,
-  fogOpacity: 0.85,
-  fogPainting: false,
-  fogTool: 'reveal',
-  fogBrushSize: 2,
-  _tokenImgData: {}, // id → dataUrl
-});
-
-// ══════════════════════════════════════════════════════════════════
-//  PHASE 2 — PERSISTANCE
-// ══════════════════════════════════════════════════════════════════
-function savePhase2() {
-  try {
-    const lean = State.tokens.map(t => {
-      const copy = { ...t };
-      if (copy.imgData) {
-        try { localStorage.setItem('co-tok-img-' + copy.id, copy.imgData); } catch (_) {}
-        delete copy.imgData;
-        copy.hasImg = true;
-      }
-      return copy;
-    });
-    localStorage.setItem('co-tokens-v2', JSON.stringify(lean));
-    localStorage.setItem('co-fog-v2', JSON.stringify({ fogEnabled: State.fogEnabled, fogOpacity: State.fogOpacity }));
-  } catch (e) { console.warn('savePhase2:', e); }
-  saveFogCanvas();
-}
-
-function loadPhase2() {
-  try {
-    const raw = localStorage.getItem('co-tokens-v2');
-    if (raw) {
-      State.tokens = JSON.parse(raw).map(t => {
-        if (t.hasImg) {
-          const img = localStorage.getItem('co-tok-img-' + t.id);
-          if (img) t.imgData = img;
-          delete t.hasImg;
-        }
-        return t;
-      });
-    }
-  } catch (e) { console.warn('loadPhase2 tokens:', e); }
-  try {
-    const fraw = localStorage.getItem('co-fog-v2');
-    if (fraw) { const f = JSON.parse(fraw); State.fogEnabled = f.fogEnabled || false; State.fogOpacity = f.fogOpacity || 0.85; }
-  } catch (e) {}
-}
-
-// ══════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════════
 //  PHASE 2 — TOKENS
-// ══════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════════
 let _pendingImgData = null;
 
 function initPhase2() {
-  loadPhase2();
-
-  // Brush cursor element
+  // Brush cursor
   if (!$('fog-brush-cursor')) {
     const cur = document.createElement('div');
     cur.id = 'fog-brush-cursor';
@@ -1346,12 +1225,12 @@ function initPhase2() {
     $('tip-btn-delete')?.addEventListener('click', () => { deleteToken(State.selectedTokenId); });
   }
 
-  // Fog canvas
+  // Brouillard
   ensureFogCanvas();
   applyFogVisibility();
   restoreFogCanvas();
 
-  // Render all saved tokens
+  // Render tokens sauvegardés
   State.tokens.forEach(t => renderToken(t));
 
   // Wire modal buttons
@@ -1376,7 +1255,7 @@ function initPhase2() {
   $('fog-enabled')?.addEventListener('change', (e) => {
     State.fogEnabled = e.target.checked;
     applyFogVisibility();
-    savePhase2();
+    saveToStorage();
     showToast(State.fogEnabled ? 'Brouillard activé' : 'Brouillard désactivé', 'info', '🌫');
   });
   $('fog-opacity')?.addEventListener('input', (e) => {
@@ -1405,22 +1284,20 @@ function initPhase2() {
     openModal('modal-fog');
   });
 
-  // Wire fog painting to viewport
   setupFogPainting();
   setupTokenDrag();
 
-  // Keyboard: T = create token, Delete = delete selected
+  // Keyboard
   document.addEventListener('keydown', (e) => {
     if (['INPUT','TEXTAREA','SELECT'].includes(document.activeElement.tagName)) return;
-    if (e.key.toLowerCase() === 't') openTokenCreateModal();
     if ((e.key === 'Delete' || e.key === 'Backspace') && State.selectedTokenId) {
       deleteToken(State.selectedTokenId);
     }
   });
 
-  // Click on viewport background → deselect
+  // Click viewport background → deselect
   $('map-viewport')?.addEventListener('mousedown', (e) => {
-    if (!e.target.closest('.vtt-token')) {
+    if (!e.target.closest('.vtt-token') && !State.fogPainting) {
       selectToken(null);
     }
   });
@@ -1475,7 +1352,6 @@ function saveTokenFromModal() {
   const size  = parseInt($('token-size')?.value, 10)   || 1;
 
   if (editId) {
-    // Edit existing
     const t = State.tokens.find(t => t.id === editId);
     if (t) {
       t.name  = name;
@@ -1486,14 +1362,12 @@ function saveTokenFromModal() {
       t.color = $('token-color')?.value || '#c9a84c';
       t.icon  = $('token-icon')?.value || '';
       if (_pendingImgData) t.imgData = _pendingImgData;
-      // Re-render
       const el = $('token-el-' + editId);
       if (el) { el.remove(); }
       renderToken(t);
       selectToken(t.id);
     }
   } else {
-    // Create new — place in center of viewport
     const vp = $('map-viewport');
     const cx = vp ? (vp.clientWidth  / 2 - State.panX) / State.zoom : 200;
     const cy = vp ? (vp.clientHeight / 2 - State.panY) / State.zoom : 200;
@@ -1516,7 +1390,7 @@ function saveTokenFromModal() {
     showToast(`♟ ${name} placé sur la carte`, 'success', '♟');
     updateLog(`Pion créé : ${name}`);
   }
-  savePhase2();
+  saveToStorage();
   closeAllModals();
 }
 
@@ -1537,7 +1411,6 @@ function renderToken(t) {
   `;
   el.dataset.tokenId = t.id;
 
-  // Inner (image or emoji)
   const inner = document.createElement('div');
   inner.className = 'token-inner';
   if (t.imgData) {
@@ -1551,13 +1424,11 @@ function renderToken(t) {
   }
   el.appendChild(inner);
 
-  // Label
   const label = document.createElement('div');
   label.className = 'token-label';
   label.textContent = t.name;
   el.appendChild(label);
 
-  // HP bar
   const bar = document.createElement('div');
   bar.className = 'token-hp-bar';
   const fill = document.createElement('div');
@@ -1567,7 +1438,6 @@ function renderToken(t) {
   bar.appendChild(fill);
   el.appendChild(bar);
 
-  // Click to select
   el.addEventListener('mousedown', (e) => {
     e.stopPropagation();
     if (e.button === 0) selectToken(t.id);
@@ -1588,7 +1458,6 @@ function updateHpFill(fillEl, hp, hpMax) {
 }
 
 function selectToken(id) {
-  // Deselect previous
   if (State.selectedTokenId) {
     const prev = $('token-el-' + State.selectedTokenId);
     if (prev) prev.classList.remove('selected');
@@ -1603,7 +1472,6 @@ function selectToken(id) {
   if (!t || !panel) return;
   const el = $('token-el-' + id);
   if (el) el.classList.add('selected');
-  // Update info panel
   const tipName = $('tip-name'); if (tipName) tipName.textContent = t.name;
   const tipType = $('tip-type'); if (tipType) tipType.textContent = { joueur:'🧙 Joueur', ennemi:'💀 Ennemi', pnj:'🗣 PNJ' }[t.type] || t.type;
   const tipFill = $('tip-hp-fill');
@@ -1617,13 +1485,11 @@ function adjustHP(id, delta) {
   if (!t) return;
   const amount = delta > 0 ? 1 : -1;
   t.hp = Math.max(0, Math.min(t.hpMax, t.hp + amount));
-  // Update bar on token
   const fill = $('hp-fill-' + id);
   if (fill) updateHpFill(fill, t.hp, t.hpMax);
-  // Update info panel
   const tipFill = $('tip-hp-fill'); if (tipFill) updateHpFill(tipFill, t.hp, t.hpMax);
   const tipText = $('tip-hp-text'); if (tipText) tipText.textContent = `${t.hp}/${t.hpMax}`;
-  savePhase2();
+  saveToStorage();
 }
 
 function deleteToken(id) {
@@ -1632,7 +1498,7 @@ function deleteToken(id) {
   State.tokens = State.tokens.filter(t => t.id !== id);
   try { localStorage.removeItem('co-tok-img-' + id); } catch (_) {}
   if (State.selectedTokenId === id) selectToken(null);
-  savePhase2();
+  saveToStorage();
   showToast('Pion supprimé', 'info', '✕');
 }
 
@@ -1668,7 +1534,6 @@ function setupTokenDrag() {
     State.tokenDragging = true;
     State.tokenDragId = id;
     tokenEl.classList.add('dragging');
-    // Compute offset in world coords from token center
     const rect = vp.getBoundingClientRect();
     const mouseWorldX = (e.clientX - rect.left - State.panX) / State.zoom;
     const mouseWorldY = (e.clientY - rect.top  - State.panY) / State.zoom;
@@ -1690,7 +1555,7 @@ function setupTokenDrag() {
     if (State.tokenDragId) {
       const el = $('token-el-' + State.tokenDragId);
       if (el) el.classList.remove('dragging');
-      savePhase2();
+      saveToStorage();
     }
     State.tokenDragging = false;
     State.tokenDragId = null;
@@ -1737,7 +1602,6 @@ function renderTokensListPanel() {
     row.appendChild(avatar);
     row.appendChild(info);
     row.appendChild(actions);
-    // Click row → select
     row.addEventListener('click', (e) => {
       if (e.target.closest('button')) return;
       selectToken(t.id);
@@ -1747,9 +1611,9 @@ function renderTokensListPanel() {
   });
 }
 
-// ══════════════════════════════════════════════════════════════════
+// ═══════════════════════════════════════════════��════════════════════════════════
 //  PHASE 2 — BROUILLARD DE GUERRE
-// ══════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════════
 function ensureFogCanvas() {
   const layer = $('fog-layer');
   if (!layer) return;
@@ -1768,11 +1632,9 @@ function resizeFogCanvas() {
   if (!canvas || !mapImg || !mapImg.naturalWidth) return;
   const w = mapImg.naturalWidth;
   const h = mapImg.naturalHeight;
-  // Only reset if size changed
   if (canvas.width !== w || canvas.height !== h) {
     canvas.width  = w;
     canvas.height = h;
-    // Fill with black (hidden)
     const ctx = canvas.getContext('2d');
     ctx.fillStyle = '#000';
     ctx.fillRect(0, 0, w, h);
@@ -1792,15 +1654,6 @@ function applyFogVisibility() {
 function applyFogOpacity() {
   const canvas = $('fog-canvas');
   if (canvas) canvas.style.opacity = State.fogOpacity;
-}
-
-function saveFogCanvas() {
-  try {
-    const canvas = $('fog-canvas');
-    if (!canvas || !canvas.width) return;
-    const key = 'co-fog-map-' + (State.currentSceneId || 'default');
-    localStorage.setItem(key, canvas.toDataURL('image/png'));
-  } catch (e) {}
 }
 
 function restoreFogCanvas() {
@@ -1827,7 +1680,7 @@ function fogRevealAll() {
   if (!canvas || !canvas.width) return;
   const ctx = canvas.getContext('2d');
   ctx.clearRect(0, 0, canvas.width, canvas.height);
-  savePhase2();
+  saveToStorage();
   showToast('Toute la carte révélée', 'success', '☀');
 }
 
@@ -1837,7 +1690,7 @@ function fogHideAll() {
   const ctx = canvas.getContext('2d');
   ctx.fillStyle = '#000';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
-  savePhase2();
+  saveToStorage();
   showToast('Carte couverte', 'info', '🌑');
 }
 
@@ -1907,14 +1760,13 @@ function setupFogPainting() {
   });
 
   window.addEventListener('mouseup', (e) => {
-    if (painting) { painting = false; savePhase2(); }
+    if (painting) { painting = false; saveToStorage(); }
   });
 
   vp.addEventListener('contextmenu', (e) => {
     if (State.fogPainting) { e.preventDefault(); State.fogPainting = false; vp.classList.remove('fog-painting'); if (cursor) cursor.style.display = 'none'; }
   });
 
-  // Clicking the fog toggle in the toolbar enters painting mode
   $('btn-fog-toggle')?.addEventListener('click', () => {
     if (!State.fogEnabled) return;
     State.fogPainting = !State.fogPainting;
@@ -1923,7 +1775,6 @@ function setupFogPainting() {
     showToast(State.fogPainting ? 'Mode peinture brouillard — Clic droit pour quitter' : 'Mode peinture désactivé', 'info', '🌫');
   });
 
-  // ESC exits painting mode
   document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && State.fogPainting) {
       State.fogPainting = false;
@@ -1933,32 +1784,291 @@ function setupFogPainting() {
   });
 }
 
-// Hook loadScene to resize fog canvas after image loads
-const _origLoadScene = loadScene;
-// We patch by wrapping the existing loadScene call in initApp instead:
-// After Phase 2 init, fog canvas is resized via the mapImg.onload → setTimeout already in loadScene.
-// We additionally watch for map image load globally:
-document.addEventListener('DOMContentLoaded', () => {
-  const obs = new MutationObserver(() => {
-    const mapImg = $('map-image');
-    if (mapImg) {
-      mapImg.addEventListener('load', () => {
-        ensureFogCanvas();
-        setTimeout(() => {
-          resizeFogCanvas();
-          applyFogOpacity();
-          restoreFogCanvas();
-        }, 80);
-      });
-      obs.disconnect();
+// ════════════════════════════════════════════════════════════════════════════════
+//  STYLES DYNAMIQUES
+// ════════════════════════════════════════════════════════════════════════════════
+(function injectDynamicStyles() {
+  const style = document.createElement('style');
+  style.textContent = `
+    /* Initiative Track */
+    .init-track {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: nowrap;
+      overflow-x: auto;
+      padding: 2px 0;
+      scrollbar-width: none;
     }
-  });
-  obs.observe(document.body, { childList: true, subtree: true });
-});
+    .init-track::-webkit-scrollbar { display: none; }
+    .init-empty {
+      font-family: 'Crimson Text', serif;
+      font-style: italic;
+      color: var(--text-muted);
+      font-size: 0.82rem;
+    }
+    .init-slot {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      padding: 3px 10px 3px 6px;
+      background: rgba(255,255,255,0.04);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 20px;
+      font-family: 'Cinzel', serif;
+      font-size: 0.7rem;
+      color: var(--text-secondary);
+      cursor: pointer;
+      transition: var(--transition);
+      white-space: nowrap;
+      user-select: none;
+    }
+    .init-slot:hover {
+      border-color: rgba(201,168,76,0.3);
+      color: var(--text-primary);
+    }
+    .init-slot.active {
+      background: rgba(201,168,76,0.12);
+      border-color: var(--gold);
+      color: var(--gold-light);
+      box-shadow: 0 0 12px rgba(201,168,76,0.2);
+    }
+    .init-slot.enemy.active {
+      background: rgba(192,57,43,0.12);
+      border-color: var(--blood);
+      color: #e74c3c;
+      box-shadow: 0 0 12px rgba(192,57,43,0.2);
+    }
+    .init-icon { font-size: 0.85rem; }
+    .init-name { font-weight: 600; }
+    .init-score {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.65rem;
+      color: var(--text-muted);
+    }
+    .init-slot.active .init-score { color: var(--gold-dim); }
 
-// ══════════════════════════════════════════════════════════════════
+    /* Tokens */
+    .vtt-token {
+      position: absolute;
+      border: 2px solid;
+      border-radius: 50%;
+      background: rgba(10, 8, 22, 0.6);
+      cursor: move;
+      transition: box-shadow 0.15s ease;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      user-select: none;
+      z-index: 4;
+    }
+    .vtt-token:hover {
+      box-shadow: 0 0 20px rgba(201, 168, 76, 0.3);
+    }
+    .vtt-token.selected {
+      box-shadow: 0 0 30px rgba(201, 168, 76, 0.6), inset 0 0 10px rgba(201, 168, 76, 0.2);
+    }
+    .vtt-token.dragging {
+      opacity: 0.9;
+      box-shadow: 0 0 40px rgba(201, 168, 76, 0.8);
+    }
+    .vtt-token.ennemi { border-color: #c0392b; }
+    .vtt-token.pnj { border-color: #8e44ad; }
+    .token-inner {
+      font-size: 1.2rem;
+      flex-shrink: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .token-inner img {
+      width: 80%;
+      height: 80%;
+      border-radius: 50%;
+      object-fit: cover;
+    }
+    .token-label {
+      position: absolute;
+      bottom: -18px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-family: 'Cinzel', serif;
+      font-size: 0.7rem;
+      font-weight: 600;
+      color: var(--gold-light);
+      white-space: nowrap;
+      background: rgba(10, 8, 22, 0.8);
+      padding: 2px 8px;
+      border-radius: 12px;
+      pointer-events: none;
+    }
+    .token-hp-bar {
+      position: absolute;
+      bottom: -6px;
+      width: 100%;
+      height: 2px;
+      background: rgba(0, 0, 0, 0.5);
+      border-radius: 1px;
+      overflow: hidden;
+    }
+    .token-hp-fill {
+      height: 100%;
+      background: #27ae60;
+      width: 100%;
+      transition: width 0.3s ease, background 0.3s ease;
+    }
+
+    /* Info Panel Token */
+    #token-info-panel {
+      position: fixed;
+      bottom: 72px;
+      right: 12px;
+      width: 200px;
+      background: rgba(10, 8, 22, 0.95);
+      border: 1px solid var(--glass-border);
+      border-radius: 8px;
+      padding: 12px;
+      display: none;
+      flex-direction: column;
+      gap: 8px;
+      backdrop-filter: blur(8px);
+      z-index: 100;
+    }
+    #token-info-panel.visible { display: flex; }
+    .tip-name {
+      font-family: 'Cinzel', serif;
+      font-size: 0.9rem;
+      font-weight: 600;
+      color: var(--gold-light);
+    }
+    .tip-type {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+    .tip-hp-row {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 0.75rem;
+    }
+    .tip-hp-bar {
+      flex: 1;
+      height: 4px;
+      background: rgba(0, 0, 0, 0.5);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    .tip-hp-fill {
+      height: 100%;
+      background: #27ae60;
+      width: 100%;
+    }
+    .tip-hp-text {
+      font-family: 'JetBrains Mono', monospace;
+      color: var(--text-muted);
+    }
+    .tip-actions {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4px;
+      margin-top: 4px;
+    }
+    .tip-btn {
+      padding: 4px 6px;
+      background: rgba(201, 168, 76, 0.12);
+      border: 1px solid var(--gold-dim);
+      border-radius: 4px;
+      color: var(--gold-light);
+      font-family: 'Cinzel', serif;
+      font-size: 0.65rem;
+      cursor: pointer;
+      transition: var(--transition);
+    }
+    .tip-btn:hover { background: rgba(201, 168, 76, 0.2); box-shadow: 0 0 8px rgba(201, 168, 76, 0.2); }
+    .tip-btn.danger { background: rgba(192, 57, 43, 0.15); border-color: var(--blood); color: #e74c3c; }
+    .tip-btn.danger:hover { background: rgba(192, 57, 43, 0.3); }
+
+    /* Token list */
+    .token-list-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px;
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid rgba(255, 255, 255, 0.05);
+      border-radius: 6px;
+      cursor: pointer;
+      transition: var(--transition);
+    }
+    .token-list-row:hover { background: rgba(255, 255, 255, 0.04); border-color: rgba(255, 255, 255, 0.1); }
+    .token-list-avatar {
+      width: 32px;
+      height: 32px;
+      border-radius: 50%;
+      border: 2px solid var(--gold);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 1rem;
+      flex-shrink: 0;
+      background: rgba(10, 8, 22, 0.6);
+    }
+    .token-list-avatar img {
+      width: 100%;
+      height: 100%;
+      border-radius: 50%;
+      object-fit: cover;
+    }
+    .token-list-info { flex: 1; min-width: 0; }
+    .token-list-name {
+      font-family: 'Cinzel', serif;
+      font-size: 0.8rem;
+      font-weight: 600;
+      color: var(--text-primary);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .token-list-meta {
+      font-size: 0.65rem;
+      color: var(--text-muted);
+    }
+    .token-list-actions { display: flex; gap: 4px; }
+    .token-list-btn {
+      padding: 4px 6px;
+      background: rgba(201, 168, 76, 0.1);
+      border: 1px solid var(--gold-dim);
+      border-radius: 4px;
+      color: var(--gold-light);
+      cursor: pointer;
+      font-size: 0.75rem;
+      transition: var(--transition);
+    }
+    .token-list-btn:hover { background: rgba(201, 168, 76, 0.2); }
+    .token-list-btn.del { background: rgba(192, 57, 43, 0.1); border-color: var(--blood); color: #e74c3c; }
+    .token-list-btn.del:hover { background: rgba(192, 57, 43, 0.2); }
+
+    /* Fog brush cursor */
+    #fog-brush-cursor {
+      position: fixed;
+      border: 2px solid rgba(201, 168, 76, 0.6);
+      border-radius: 50%;
+      pointer-events: none;
+      display: none;
+      z-index: 200;
+      transform: translate(-50%, -50%);
+    }
+
+    /* Settings group fix */
+    .settings-group { padding-bottom: 12px; }
+  `;
+  document.head.appendChild(style);
+})();
+
+// ════════════════════════════════════════════════════════════════════════════════
 //  BOOT
-// ══════════════════════════════════════════════════════════════════
+// ════════════════════════════════════════════════════════════════════════════════
 document.addEventListener('DOMContentLoaded', () => {
   initSplashParticles();
   $('btn-enter')?.addEventListener('click', enterApp);
